@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - main
+      - staging
   workflow_dispatch:
 
 jobs:
@@ -30,7 +31,29 @@ jobs:
           name: java-app
           path: '${{ github.workspace }}/target/*.jar'
 
-  deploy:
+  deploy-staging:
+    runs-on: windows-latest
+    needs: build
+    environment:
+      name: 'Staging'
+      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
+
+    steps:
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v3
+        with:
+          name: java-app
+
+      - name: Deploy to Azure Web App
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: 'gestao-residuos'
+          slot-name: 'Staging'
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_D76A2D3B72B8463A9AD0DCBF98F51F0A }}
+          package: '*.jar'
+
+deploy-main:
     runs-on: windows-latest
     needs: build
     environment:
@@ -51,3 +74,4 @@ jobs:
           slot-name: 'Production'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_D76A2D3B72B8463A9AD0DCBF98F51F0A }}
           package: '*.jar'
+
