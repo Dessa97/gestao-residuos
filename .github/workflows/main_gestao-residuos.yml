@@ -53,7 +53,7 @@ jobs:
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_D76A2D3B72B8463A9AD0DCBF98F51F0A }}
           package: '*.jar'
 
-deploy-main:
+  deploy-main:
     runs-on: windows-latest
     needs: build
     environment:
