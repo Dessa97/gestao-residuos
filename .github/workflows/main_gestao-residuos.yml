@@ -1,53 +1,74 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
-
-name: Build and deploy JAR app to Azure Web App - gestao-residuos
+name: CI/CD para Gestão de Resíduos
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
+      - staging
+
+env:
+  AZURE_CONTAINER_REGISTRY: gestaoResiduos.azurecr.io
+  IMAGE_NAME: gestao_residuos
+  RESOURCE_GROUP: FIAP
+  WEBAPP_NAME: gestao-residuos
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout do Código
+        uses: actions/checkout@v3
 
-      - name: Set up Java version
-        uses: actions/setup-java@v1
+      - name: Configurar Java
+        uses: actions/setup-java@v3
         with:
           java-version: '21'
+          distribution: 'temurin'
 
-      - name: Build with Maven
-        run: mvn clean install
+      - name: Build do Projeto com Maven
+        run: |
+          mvn clean install -DskipTests=true  # Pule testes para agilizar o processo
 
-      - name: Upload artifact for deployment job
-        uses: actions/upload-artifact@v3
-        with:
-          name: java-app
-          path: '${{ github.workspace }}/target/*.jar'
-
-  deploy:
-    runs-on: windows-latest
+  dockerize:
+    runs-on: ubuntu-latest
     needs: build
-    environment:
-      name: 'Production'
-      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
 
     steps:
-      - name: Download artifact from build job
-        uses: actions/download-artifact@v3
-        with:
-          name: java-app
+      - name: Checkout do Código
+        uses: actions/checkout@v3
 
-      - name: Deploy to Azure Web App
-        id: deploy-to-webapp
+      - name: Build da Imagem Docker
+        run: |
+          docker build -t $AZURE_CONTAINER_REGISTRY/$IMAGE_NAME:latest .
+
+      - name: Push da Imagem para o ACR
+        run: |
+          echo "${{ secrets.AZURE_CREDENTIALS }}" | docker login $AZURE_CONTAINER_REGISTRY --username ${{ secrets.AZURE_USERNAME }} --password-stdin
+          docker push $AZURE_CONTAINER_REGISTRY/$IMAGE_NAME:latest
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: dockerize
+    if: github.ref == 'refs/heads/staging'
+
+    steps:
+      - name: Deploy em Staging
         uses: azure/webapps-deploy@v2
         with:
-          app-name: 'gestao-residuos'
-          slot-name: 'Production'
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_D76A2D3B72B8463A9AD0DCBF98F51F0A }}
-          package: '*.jar'
+          app-name: ${{ env.WEBAPP_NAME }}-staging
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}  # Referência ao Publish Profile
+          images: $AZURE_CONTAINER_REGISTRY/$IMAGE_NAME:latest
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: dockerize
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Deploy em Produção
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ env.WEBAPP_NAME }}  # Nome do Azure Web App
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}  # Referência ao Publish Profile
+          images: $AZURE_CONTAINER_REGISTRY/$IMAGE_NAME:latest
